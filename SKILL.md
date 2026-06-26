@@ -28,23 +28,55 @@ technique avec cotation normalisée (ISO 129-1), pas d'ASCII art.
 
 ## Scripts helpers disponibles
 
-**Lis les deux scripts avant de générer le code du projet.**
+**Lis les scripts concernés avant de générer le code du projet.**
 
-### `scripts/base_drawing.py` — Dessin technique DXF/SVG (ezdxf)
+### `scripts/render_drawing.py` — Dessin technique normalisé ISO 129-1 (matplotlib)
 
-Fonctions clés disponibles :
-- `create_doc(title)` → crée doc DXF + layers ISO + dimstyle
-- `add_rectangle(msp, x, y, width, height)` → contour d'une pièce
-- `add_hole(msp, cx, cy, diameter, depth, label)` → cercle + annotation Ø↧
-- `add_center_lines(msp, cx, cy, radius)` → lignes d'axe (tiret-point)
-- `add_dim_horizontal(msp, x1, y, x2, offset)` → cotation horizontale ISO
-- `add_dim_vertical(msp, x, y1, y2, offset)` → cotation verticale ISO
-- `add_title_block(msp, title, pieces)` → cartouche + liste de débit
-- `save(doc, output_dir, base_name)` → sauvegarde DXF + tente export SVG (PNG aussi si matplotlib dispo)
+Génère des PNG de haute qualité : fond blanc, cotations normalisées, lignes d'axe tiret-point,
+cartouche professionnel. **C'est ce script qu'il faut utiliser pour les dessins techniques.**
+
+Classe principale : `TechDrawing(scale=5, sheet='A3L', dpi=200)`
+- `scale` : dénominateur de l'échelle (5 → 1:5, 10 → 1:10)
+- `sheet` : format ('A3L', 'A3P', 'A4L', 'A4P')
+
+Méthodes de dessin (toutes en coords modèle mm, ox/oy = origine feuille en mm) :
+- `part(ox, oy, x, y, w, h)` → contour de pièce (trait fort, fond gris clair)
+- `hole(ox, oy, cx, cy, diam, depth, label, real_diam)` → cercle + axes tiret-point rouges + annotation Ø↧
+  - `real_diam` : dimension réelle à afficher si la vue est agrandie (ex: vue ×3, cercle 3× mais label en vrai mm)
+- `axis_h(ox, oy, x1, x2, y, over)` → ligne d'axe horizontale (tiret-point rouge)
+- `axis_v(ox, oy, x, y1, y2, over)` → ligne d'axe verticale
+- `dim_h(ox, oy, x1, x2, y_ref, ext, label)` → cotation horizontale ISO
+  - `ext` négatif = cote sous la pièce, positif = au-dessus ; valeur en mm feuille
+- `dim_v(ox, oy, x_ref, y1, y2, ext, label)` → cotation verticale ISO
+  - `ext` négatif = cote à gauche, positif = à droite
+- `view_label(sx, sy, text)` → titre de vue (gras, coords feuille directes)
+- `view_sub(sx, sy, text)` → sous-titre vue (matière, dims)
+- `title_block(title, subtitle, material, scale_str, date, projection, parts)` → cartouche bas-droit
+- `notes(lines)` → bloc notes bas-gauche (list de str, numérotées 1-N)
+- `save(path)` → sauvegarde PNG
+
+**Placement des titres de vue (IMPORTANT)** :
+Toujours placer les titres AU-DESSUS de la vue, pas en dessous (les cotes occupent l'espace sous la pièce).
+Dans matplotlib, y croît vers le haut, donc `top_y = oy + hauteur_pièce/scale` est le sommet de la pièce.
+```python
+top_y = oy + piece_height / scale
+d.view_label(ox, top_y + 14, 'NOM DE LA VUE')   # titre principal : +14 = au-dessus
+d.view_sub(  ox, top_y + 6,  'matière — dims')    # sous-titre : +6 = juste en dessous du titre
+```
+
+**Vues agrandies (détails)** :
+Pour montrer un détail ×N : multiplier TOUTES les coords modèle par N (réf: Z=N).
+Passer `real_diam` aux trous et le label des cotes pour afficher les vraies valeurs.
+```python
+Z = 3   # agrandissement ×3
+d.part(ox, oy, 0, 0, 250*Z, 18*Z)
+d.hole(ox, oy, 60*Z, 9*Z, diam=8*Z, depth=15, label='T-a', real_diam=8)
+d.dim_h(ox, oy, 0, 60*Z, y_ref=0, ext=-14, label='60')  # label=vraie valeur
+```
 
 ### `scripts/generate_pdf.py` — Dossier de fabrication PDF (reportlab)
 
-Fonction principale : `build_pdf(data, output_path, dxf_image_path=None)`
+Fonction principale : `build_pdf(data, output_path, drawing_image_path=None)`
 
 `data` est un dict avec les clés :
 - `title`, `material`, `dimensions`, `assembly`, `level`, `date`, `summary`
@@ -55,7 +87,7 @@ Fonction principale : `build_pdf(data, output_path, dxf_image_path=None)`
 - `outillage`, `consommables` : listes de str
 - `conseils` : liste de str
 
-`dxf_image_path` : chemin vers l'image PNG exportée depuis ezdxf (optionnel, intégrée page 2).
+`drawing_image_path` : chemin vers le PNG produit par render_drawing.py (intégré page 2 du PDF).
 
 ## Flux de travail
 
@@ -89,41 +121,45 @@ Génère un script Python complet qui :
 1. Commence par un bloc d'auto-installation des dépendances :
    ```python
    import subprocess, sys
-   for pkg in ["ezdxf", "matplotlib", "reportlab", "pillow"]:
+   for pkg in ["matplotlib", "reportlab", "pillow"]:
        try: __import__({"pillow":"PIL"}.get(pkg, pkg))
        except ImportError: subprocess.check_call([sys.executable,"-m","pip","install",pkg,"--break-system-packages","-q"])
    ```
-2. Importe `base_drawing` et `generate_pdf` depuis le répertoire du skill (ajout au `sys.path`)
-3. Dessine **chaque pièce** dans une vue séparée (avec marge de 30 mm entre elles)
-4. Pour chaque pièce :
-   - Contour en trait continu (LAYER_VISIBLE)
-   - Tous les trous : cercle + lignes d'axe + annotation `Ø{d} ↧{prof}`
-   - Cotations horizontales et verticales ISO sur l'extérieur du contour
-   - Cotations de position des trous depuis les bords de référence
-4. Ajoute un cartouche avec liste de débit complète
-5. Sauvegarde dans `~/Plans_Fabrication/{nom_projet}/`
-6. Appelle `save()` pour produire DXF + SVG
+2. Ajoute le répertoire du skill au `sys.path` pour importer les helpers :
+   ```python
+   SKILL_DIR = "/Users/{user}/.claude/skills/fabrication-plan/scripts"
+   sys.path.insert(0, SKILL_DIR)
+   from render_drawing import TechDrawing
+   from generate_pdf import build_pdf
+   ```
+3. Crée un `TechDrawing` en choisissant l'échelle adaptée (1:5 pour meubles, 1:10 pour grandes pièces)
+4. Pour chaque pièce (origin ox, oy sur la feuille) :
+   - `d.part(ox, oy, 0, 0, largeur, hauteur)` — contour
+   - `d.hole(...)` pour chaque trou avec diam, depth, label
+   - `d.axis_h/v(...)` pour les lignes d'axe des trous
+   - `d.dim_h/v(...)` pour toutes les cotations (largeur, hauteur, positions trous)
+   - Titres au-dessus de la pièce : `d.view_label(ox, top+14, ...)` et `d.view_sub(ox, top+6, ...)`
+5. Ajoute vue de détail agrandie (×3) pour les perçages de petit diamètre (Ø < 12mm)
+6. `d.title_block(...)` pour le cartouche + `d.notes([...])` pour les instructions
+7. `d.save(path_png)` → produit le PNG
 
-**Conventions de dessin ISO 129-1 à respecter :**
-- Cotation en mm, sans unité sur le dessin (noter "Toutes cotes en mm" dans le cartouche)
-- Ligne de cote avec flèches aux deux extrémités (géré par ezdxf dimstyle)
-- Ligne d'attache dépasse de 1.5 mm au-delà de la ligne de cote
-- Trous : symbole Ø avant le diamètre, ↧ avant la profondeur pour borgne
-- Lignes d'axe (tiret-point) sur tous les perçages
-- Vues dans l'ordre : vue de face, vue de dessus, vue de droite (si nécessaire)
+**Conventions ISO 129-1 à respecter :**
+- Cotes en mm, sans unité sur le dessin ("Toutes cotes en mm" dans les notes)
+- Lignes de cote avec flèches aux deux extrémités + lignes d'attache
+- Trous : Ø{diamètre} ↧{profondeur} (profondeur seulement pour trous borgnes)
+- Axes de trous en tiret-point rouge
+- Vues organisées : grandes pièces à gauche, détails à droite
 
 ### Étape 4 — Génération des fichiers
 
 Génère un script Python unique qui :
-1. Utilise `base_drawing.py` pour produire le DXF + export PNG (via matplotlib)
+1. Utilise `render_drawing.py` pour produire le dessin PNG
 2. Utilise `generate_pdf.py` pour produire le dossier PDF complet
 3. Sauvegarde tout dans `~/Plans_Fabrication/{nom_projet}/`
-   - `plan.dxf` — dessin technique (LibreCAD, FreeCAD, Inkscape)
-   - `plan.svg` — vue vectorielle imprimable
-   - `plan.png` — image pour intégration dans le PDF
-   - `dossier.pdf` — dossier complet (page de garde, dessin, débit, perçage, étapes, outillage)
+   - `plan.png` — dessin technique normalisé
+   - `dossier.pdf` — dossier complet (page de garde, dessin intégré, débit, perçage, étapes, outillage)
 
-Exécute le script avec Bash. En cas d'erreur matplotlib/SVG, le DXF seul est suffisant.
+Exécute le script avec Bash et affiche le chemin du PDF généré.
 
 ### Étape 5 — Résumé final
 
