@@ -1,0 +1,23 @@
+{
+  "skill_name": "fabrication-plan",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Je veux fabriquer une étagère murale en contreplaqué 18mm, 3 tablettes, largeur 80cm, hauteur totale 90cm, profondeur 25cm. Assemblage par tourillons. J'ai une perceuse et une scie circulaire.",
+      "expected_output": "Plan complet avec liste de débit (montants, tablettes, fond optionnel), plan de perçage avec cotes précises des tourillons sur chaque pièce concernée, schéma ASCII, étapes ordonnées.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "j'ai besoin d'un plan pour un établi d'atelier simple, plateau en hêtre massif 40mm, 160x70cm, pieds en pin 70x70mm, hauteur 90cm. vissage + mortaises pour les traverses.",
+      "expected_output": "Plan avec liste de débit (plateau, 4 pieds, traverses), détail des mortaises ou assemblages, plan de perçage pour les boulons d'assemblage, vue d'assemblage, étapes.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "/fabrication-plan boite de rangement pour outils, 30x20x15cm, MDF 10mm, couvercle coulissant, assemblage collé.",
+      "expected_output": "Plan complet boîte : liste débit des 6 faces + coulisse, plan de rainurage/perçage pour le couvercle coulissant, étapes de fabrication avec ordre collage.",
+      "files": []
+    }
+  ]
+}
